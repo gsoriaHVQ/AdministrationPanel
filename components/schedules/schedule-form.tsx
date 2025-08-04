@@ -1,8 +1,7 @@
 "use client"
 
-import type React from "react"
+import React, { useState, useEffect } from "react"
 
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,13 +9,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar, Clock } from "lucide-react"
 
+
 interface ScheduleFormProps {
-  onSubmit: (scheduleData: any) => void
-  doctors: Array<{ id: string; name: string; specialty: string }>
+  onSubmit: (scheduleData: any) => void;
+  doctors: Array<{ id: string; name: string; specialty: string }>;
 }
 
 export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
-  const [formData, setFormData] = useState({
+
+
+  const [formData, setFormData] = useState<{
+    doctorId: string;
+    specialty: string;
+    location: string;
+    office: string;
+    weekDays: number[];
+    startTime: string;
+    endTime: string;
+  }>({
     doctorId: "",
     specialty: "",
     location: "",
@@ -25,21 +35,82 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
     startTime: "",
     endTime: "",
   })
+  const [searchDoctor, setSearchDoctor] = useState("");
+  const [specialties, setSpecialties] = useState<string[]>([]);
+  const [medicosEspecialidad, setMedicosEspecialidad] = useState<Array<{ id: string; name: string; specialty: string }>>([]);
+  const [loadingDoctors, setLoadingDoctors] = useState(false);
+  const [errorDoctors, setErrorDoctors] = useState("");
 
-  const specialties = [
-    "Cardiología",
-    "Dermatología",
-    "Endocrinología",
-    "Gastroenterología",
-    "Ginecología",
-    "Neurología",
-    "Oftalmología",
-    "Ortopedia",
-    "Pediatría",
-    "Psiquiatría",
-    "Radiología",
-    "Urología",
-  ]
+  // Obtener especialidades únicas desde los médicos iniciales
+  useEffect(() => {
+    setSpecialties(Array.from(new Set(doctors.map((d: { specialty: string }) => d.specialty))).sort() as string[]);
+  }, [doctors]);
+
+
+
+  // Consultar médicos por especialidad o búsqueda
+
+  // Limpiar doctorId solo cuando cambia la especialidad (no en cada búsqueda)
+  const prevSpecialty = React.useRef<string>("");
+  useEffect(() => {
+    if (formData.specialty !== prevSpecialty.current) {
+      setFormData(prev => ({ ...prev, doctorId: "" }));
+      prevSpecialty.current = formData.specialty;
+    }
+  }, [formData.specialty]);
+
+  // Consultar médicos por especialidad o búsqueda
+  useEffect(() => {
+    if (formData.specialty) {
+      setLoadingDoctors(true);
+      setErrorDoctors("");
+      if (searchDoctor.length >= 2) {
+        import("@/lib/api").then(api => {
+          api.getMedicosPorNombre(searchDoctor)
+            .then((data: any[]) => {
+              const filtered = data.filter((d: any) => d.descripcion_item === formData.specialty);
+              setMedicosEspecialidad(
+                filtered.map((d: any) => ({
+                  id: String(d.codigo_prestador),
+                  name: d.nombre_prestador,
+                  specialty: d.descripcion_item
+                }))
+              );
+              setLoadingDoctors(false);
+            })
+            .catch((e: any) => {
+              setErrorDoctors("Error al cargar médicos");
+              setMedicosEspecialidad([]);
+              setLoadingDoctors(false);
+            });
+        });
+      } else {
+        import("@/lib/api").then(api => {
+          api.getMedicosPorEspecialidad(formData.specialty)
+            .then((data: any[]) => {
+              setMedicosEspecialidad(
+                data.map((d: any) => ({
+                  id: String(d.codigo_prestador),
+                  name: d.nombre_prestador,
+                  specialty: d.descripcion_item
+                }))
+              );
+              setLoadingDoctors(false);
+            })
+            .catch((e: any) => {
+              setErrorDoctors("Error al cargar médicos");
+              setMedicosEspecialidad([]);
+              setLoadingDoctors(false);
+            });
+        });
+      }
+    } else {
+      setMedicosEspecialidad([]);
+    }
+  }, [formData.specialty, searchDoctor]);
+
+  // Mostrar solo los médicos consultados
+  const filteredDoctors = medicosEspecialidad;
 
   const locations = [
     "Hospital Principal",
@@ -50,17 +121,17 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
   ]
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSubmit(formData)
+    e.preventDefault();
+    onSubmit(formData);
   }
 
   const handleDoctorChange = (doctorId: string) => {
-    const doctor = doctors.find((d) => d.id === doctorId)
+    const doctor = medicosEspecialidad.find((d: { id: string; specialty: string }) => String(d.id) === String(doctorId));
     setFormData((prev) => ({
       ...prev,
-      doctorId,
-      specialty: doctor?.specialty || "",
-    }))
+      doctorId: String(doctorId),
+      specialty: doctor?.specialty || prev.specialty,
+    }));
   }
 
   return (
@@ -79,23 +150,8 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="doctor">Médico</Label>
-                <Select onValueChange={handleDoctorChange} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar médico" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {doctors.map((doctor) => (
-                      <SelectItem key={doctor.id} value={doctor.id}>
-                        {doctor.name} - {doctor.specialty}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="specialty">Especialidad</Label>
                 <Select
@@ -110,6 +166,24 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
                     {specialties.map((specialty) => (
                       <SelectItem key={specialty} value={specialty}>
                         {specialty}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="doctor">Médico</Label>
+                
+                <Select onValueChange={handleDoctorChange} value={formData.doctorId} required disabled={!formData.specialty || loadingDoctors}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.specialty ? (loadingDoctors ? "Cargando médicos..." : "Seleccionar médico") : "Seleccione una especialidad primero"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {errorDoctors && <div className="text-red-500 px-2 py-1">{errorDoctors}</div>}
+                    {(filteredDoctors || []).map((doctor) => (
+                      <SelectItem key={doctor.id} value={String(doctor.id)}>
+                        {doctor.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
