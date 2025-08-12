@@ -4,8 +4,10 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Calendar, Search } from "lucide-react"
+import { Search } from "lucide-react"
+import { componentStyles } from "@/styles"
+import { DoctorCard } from "./doctor-card"
+import { getEspecialidadesV2, getMedicosPorEspecialidadV2 } from "@/lib/api"
 
 import type { Doctor } from "@/lib/types"
 
@@ -15,62 +17,85 @@ interface DoctorsListProps {
 }
 
 export function DoctorsList({ doctors, onViewSchedule }: DoctorsListProps) {
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedSpecialty, setSelectedSpecialty] = useState("")
+  const [specialties, setSpecialties] = useState<string[]>([])
+  const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([])
+  const [loadingDoctors, setLoadingDoctors] = useState(false)
+  const [errorDoctors, setErrorDoctors] = useState("")
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedSpecialty, setSelectedSpecialty] = useState("");
-  const [specialties, setSpecialties] = useState<string[]>([]);
-  const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
-  const [loadingDoctors, setLoadingDoctors] = useState(false);
-  const [errorDoctors, setErrorDoctors] = useState("");
-
-  // Inicializar especialidades desde la prop doctors (solo para el select)
+  // Cargar especialidades desde API v2, con fallback a props si falla
   useEffect(() => {
-    setSpecialties(Array.from(new Set(doctors.map((d: Doctor) => d.specialty))).sort());
-  }, [doctors]);
+    getEspecialidadesV2()
+      .then((data: any[]) => {
+        const names = Array.from(
+          new Set(
+            (data || []).map((d: any) => {
+              if (typeof d === "string") return d
+              return (
+                d.nombre_especialidad ||
+                d.descripcion ||
+                d.especialidad ||
+                d.descripcion_item ||
+                String(d?.codigo_especialidad || "")
+              )
+            })
+          )
+        )
+          .filter((v) => typeof v === "string" && v.trim().length > 0)
+          .map((v) => String(v))
+          .sort()
 
-  // Consultar médicos por especialidad
+        if (names.length === 0) {
+          setSpecialties(Array.from(new Set(doctors.map((d: Doctor) => d.specialty))).sort())
+        } else {
+          setSpecialties(names)
+        }
+      })
+      .catch(() => {
+        setSpecialties(Array.from(new Set(doctors.map((d: Doctor) => d.specialty))).sort())
+      })
+  }, [doctors])
+
+  // Consultar médicos por especialidad (v2)
   useEffect(() => {
-    if (selectedSpecialty) {
-      setLoadingDoctors(true);
-      setErrorDoctors("");
-      import("@/lib/api").then(api => {
-        api.getMedicosPorEspecialidad(selectedSpecialty)
-          .then((data: any[]) => {
-            const mapped = data.map((d: any) => ({
-              id: d.codigo_prestador,
-              name: d.nombre_prestador,
-              specialty: d.descripcion_item,
-              email: d.mnemonico || "",
-              phone: d.telefono || "",
-              isActive: true // o el campo correcto si lo tienes
-            }));
-            setFilteredDoctors(mapped);
-            setLoadingDoctors(false);
-          })
-          .catch(() => {
-            setErrorDoctors("Error al cargar médicos");
-            setFilteredDoctors([]);
-            setLoadingDoctors(false);
-          });
-      });
-    } else {
-      setFilteredDoctors([]);
+    if (!selectedSpecialty) {
+      setFilteredDoctors([])
+      return
     }
-  }, [selectedSpecialty]);
+    setLoadingDoctors(true)
+    setErrorDoctors("")
+    getMedicosPorEspecialidadV2(selectedSpecialty)
+      .then((data: any[]) => {
+        const mapped: Doctor[] = (data || []).map((d: any) => ({
+          id: String(d.id ?? d.codigo_prestador ?? d.codigo ?? d.codigo_item ?? `${d.nombre_prestador || d.name}-${selectedSpecialty}`),
+          name: String(d.name ?? d.nombre_prestador ?? d.nombre ?? ""),
+          specialty: String(d.specialty ?? d.descripcion_item ?? d.especialidad ?? selectedSpecialty),
+          email: String(d.email ?? d.mnemonico ?? d.correo ?? ""),
+          phone: String(d.phone ?? d.telefono ?? ""),
+          isActive: Boolean(d.isActive ?? true),
+        }))
+        setFilteredDoctors(mapped)
+      })
+      .catch(() => {
+        setErrorDoctors("Error al cargar médicos")
+        setFilteredDoctors([])
+      })
+      .finally(() => setLoadingDoctors(false))
+  }, [selectedSpecialty])
 
-  // Filtrar por búsqueda, solo mostrar los médicos de la especialidad seleccionada
-  const doctorsToShow = filteredDoctors.filter(
-    (doctor: Doctor) =>
-      doctor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doctor.specialty.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filtrar por búsqueda, sobre el resultado recibido por especialidad
+  const doctorsToShow = filteredDoctors.filter((doctor: Doctor) =>
+    doctor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    doctor.specialty.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-[#8B1538]">Gestión de Médicos</h2>
-          <p className="text-gray-600">Administre la información de los médicos y sus horarios</p>
+          <h2 className={componentStyles.doctorsList.title}>Gestión de Médicos</h2>
+          <p className={componentStyles.doctorsList.subtitle}>Administre la información de los médicos y sus horarios</p>
         </div>
         <div className="flex gap-2 items-center">
           <select
@@ -79,8 +104,8 @@ export function DoctorsList({ doctors, onViewSchedule }: DoctorsListProps) {
             onChange={(e) => setSelectedSpecialty(e.target.value)}
           >
             <option value="">Todas las especialidades</option>
-            {specialties.map((spec) => (
-              <option key={spec} value={spec}>{spec}</option>
+            {specialties.map((spec, i) => (
+              <option key={`${spec}-${i}`} value={spec}>{spec}</option>
             ))}
           </select>
         </div>
@@ -88,7 +113,7 @@ export function DoctorsList({ doctors, onViewSchedule }: DoctorsListProps) {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center space-x-2">
+          <div className={componentStyles.doctorsList.searchContainer}>
             <Search className="h-5 w-5 text-gray-400" />
             <Input
               placeholder="Buscar por nombre o especialidad..."
@@ -100,38 +125,21 @@ export function DoctorsList({ doctors, onViewSchedule }: DoctorsListProps) {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4">
-            {doctorsToShow.map((doctor) => (
-              <div key={String(doctor.id) + '-' + (doctor.email || '') + '-' + (doctor.specialty || '')} className="flex items-center justify-between p-4 border-b border-gray-100">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{doctor.name}</h3>
-                      <p className="text-sm text-[#8B1538] font-medium">{doctor.specialty}</p>
-                    </div>
-                    <Badge variant={doctor.isActive ? "default" : "secondary"} className="ml-2">
-                      {doctor.isActive ? "Activo" : "Inactivo"}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600">
-                    <span>{doctor.email}</span>
-                    <span>{doctor.phone}</span>
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onViewSchedule(doctor.id)}
-                  className="border-[#8B1538] text-[#8B1538] hover:bg-[#8B1538] hover:text-white"
-                >
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Ver Horarios
-                </Button>
-              </div>
+            {doctorsToShow.map((doctor, idx) => (
+              <DoctorCard
+                key={`${doctor.id}-${idx}`}
+                doctor={doctor}
+                onViewSchedule={onViewSchedule}
+              />
             ))}
           </div>
 
-          {doctorsToShow.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
+          {errorDoctors && (
+            <div className="text-sm text-red-600 mt-4">{errorDoctors}</div>
+          )}
+
+          {doctorsToShow.length === 0 && !loadingDoctors && (
+            <div className={componentStyles.doctorsList.emptyState}>
               <Search className="h-12 w-12 mx-auto mb-4 text-gray-300" />
               <p>No se encontraron médicos que coincidan con la búsqueda</p>
             </div>

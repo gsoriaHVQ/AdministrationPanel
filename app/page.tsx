@@ -14,33 +14,6 @@ import { Calendar, Users, Clock, Eye } from "lucide-react"
 import { useEffect } from "react"
 import { getMedicos } from "@/lib/api"
 
-const mockSchedules = [
-	{
-		id: "1",
-		doctorId: "1",
-		doctorName: "María González",
-		specialty: "Cardiología",
-		location: "Hospital Principal",
-		office: "Consultorio 201",
-		weekDays: [1, 3, 5], // Martes, Jueves, Sábado
-		startTime: "08:00",
-		endTime: "12:00",
-		isAvailable: true,
-	},
-	{
-		id: "2",
-		doctorId: "2",
-		doctorName: "Carlos Mendoza",
-		specialty: "Neurología",
-		location: "Consulta Externa",
-		office: "Consultorio 305",
-		weekDays: [0, 2, 4], // Lunes, Miércoles, Viernes
-		startTime: "14:00",
-		endTime: "18:00",
-		isAvailable: true,
-	},
-]
-
 export default function HVQMedicalScheduler() {
 	const [currentView, setCurrentView] = useState<
 		"home" | "login" | "doctors" | "schedules" | "public"
@@ -280,7 +253,7 @@ useEffect(() => {
 								← Volver al inicio
 							</Button>
 						</div>
-						<PublicSchedule schedules={mockSchedules} />
+						<PublicSchedule />
 					</div>
 				)}
 			</main>

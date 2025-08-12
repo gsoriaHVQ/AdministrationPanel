@@ -8,7 +8,10 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar, Clock } from "lucide-react"
-
+import { componentStyles } from "@/styles"
+import { WeekDaySelector } from "@/components/ui/week-day-selector"
+import { TimeRangeSelector } from "@/components/ui/time-range-selector"
+import { getCatalogoDias, getCatalogoEdificios, getCatalogoConsultorios, getPisosPorEdificio, getMedicosPorEspecialidadV2, getMedicosPorNombreV2, getEspecialidadesV2 } from "@/lib/api"
 
 interface ScheduleFormProps {
   onSubmit: (scheduleData: any) => void;
@@ -16,13 +19,11 @@ interface ScheduleFormProps {
 }
 
 export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
-
-
   const [formData, setFormData] = useState<{
     doctorId: string;
     specialty: string;
-    location: string;
-    office: string;
+    location: string; // edificio
+    office: string; // consultorio o piso + consultorio
     weekDays: number[];
     startTime: string;
     endTime: string;
@@ -35,110 +36,113 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
     startTime: "",
     endTime: "",
   })
-  const [searchDoctor, setSearchDoctor] = useState("");
-  const [specialties, setSpecialties] = useState<string[]>([]);
-  const [medicosEspecialidad, setMedicosEspecialidad] = useState<Array<{ id: string; name: string; specialty: string }>>([]);
-  const [loadingDoctors, setLoadingDoctors] = useState(false);
-  const [errorDoctors, setErrorDoctors] = useState("");
+  const [searchDoctor, setSearchDoctor] = useState("")
+  const [specialties, setSpecialties] = useState<string[]>([])
+  const [medicosEspecialidad, setMedicosEspecialidad] = useState<Array<{ id: string; name: string; specialty: string }>>([])
+  const [loadingDoctors, setLoadingDoctors] = useState(false)
+  const [errorDoctors, setErrorDoctors] = useState("")
 
-  // Obtener especialidades únicas desde los médicos iniciales
+  // Catálogos
+  const [dias, setDias] = useState<Array<{ codigo: string; descripcion: string }>>([])
+  const [edificios, setEdificios] = useState<Array<{ codigo: string; descripcion: string }>>([])
+  const [pisos, setPisos] = useState<Array<{ codigo: string; descripcion: string }>>([])
+  const [consultorios, setConsultorios] = useState<Array<{ codigo: string; descripcion: string }>>([])
+  const [edificioSeleccionado, setEdificioSeleccionado] = useState<string>("")
+  const [pisoSeleccionado, setPisoSeleccionado] = useState<string>("")
+  const [consultorioSeleccionado, setConsultorioSeleccionado] = useState<string>("")
+
+  // Cargar especialidades desde API v2
   useEffect(() => {
-    setSpecialties(Array.from(new Set(doctors.map((d: { specialty: string }) => d.specialty))).sort() as string[]);
-  }, [doctors]);
+    getEspecialidadesV2()
+      .then((list) => setSpecialties((list || []).filter(Boolean)))
+      .catch(() => setSpecialties(Array.from(new Set(doctors.map((d) => d.specialty))).sort()))
+  }, [doctors])
 
+  // Cargar catálogos
+  useEffect(() => {
+    getCatalogoDias().then(setDias).catch(() => setDias([]))
+    getCatalogoEdificios().then(setEdificios).catch(() => setEdificios([]))
+    getCatalogoConsultorios().then(setConsultorios).catch(() => setConsultorios([]))
+  }, [])
 
-
-  // Consultar médicos por especialidad o búsqueda
+  // Cargar pisos por edificio
+  useEffect(() => {
+    if (!edificioSeleccionado) { setPisos([]); return }
+    getPisosPorEdificio(edificioSeleccionado).then(setPisos).catch(() => setPisos([]))
+  }, [edificioSeleccionado])
 
   // Limpiar doctorId solo cuando cambia la especialidad (no en cada búsqueda)
-  const prevSpecialty = React.useRef<string>("");
+  const prevSpecialty = React.useRef<string>("")
   useEffect(() => {
     if (formData.specialty !== prevSpecialty.current) {
-      setFormData(prev => ({ ...prev, doctorId: "" }));
-      prevSpecialty.current = formData.specialty;
+      setFormData(prev => ({ ...prev, doctorId: "" }))
+      prevSpecialty.current = formData.specialty
     }
-  }, [formData.specialty]);
+  }, [formData.specialty])
 
-  // Consultar médicos por especialidad o búsqueda
+  // Consultar médicos por especialidad o búsqueda (v2)
   useEffect(() => {
-    if (formData.specialty) {
-      setLoadingDoctors(true);
-      setErrorDoctors("");
-      if (searchDoctor.length >= 2) {
-        import("@/lib/api").then(api => {
-          api.getMedicosPorNombre(searchDoctor)
-            .then((data: any[]) => {
-              const filtered = data.filter((d: any) => d.descripcion_item === formData.specialty);
-              setMedicosEspecialidad(
-                filtered.map((d: any) => ({
-                  id: String(d.codigo_prestador),
-                  name: d.nombre_prestador,
-                  specialty: d.descripcion_item
-                }))
-              );
-              setLoadingDoctors(false);
-            })
-            .catch((e: any) => {
-              setErrorDoctors("Error al cargar médicos");
-              setMedicosEspecialidad([]);
-              setLoadingDoctors(false);
-            });
-        });
-      } else {
-        import("@/lib/api").then(api => {
-          api.getMedicosPorEspecialidad(formData.specialty)
-            .then((data: any[]) => {
-              setMedicosEspecialidad(
-                data.map((d: any) => ({
-                  id: String(d.codigo_prestador),
-                  name: d.nombre_prestador,
-                  specialty: d.descripcion_item
-                }))
-              );
-              setLoadingDoctors(false);
-            })
-            .catch((e: any) => {
-              setErrorDoctors("Error al cargar médicos");
-              setMedicosEspecialidad([]);
-              setLoadingDoctors(false);
-            });
-        });
-      }
-    } else {
-      setMedicosEspecialidad([]);
+    if (!formData.specialty) {
+      setMedicosEspecialidad([])
+      return
     }
-  }, [formData.specialty, searchDoctor]);
+    setLoadingDoctors(true)
+    setErrorDoctors("")
 
-  // Mostrar solo los médicos consultados
-  const filteredDoctors = medicosEspecialidad;
+    const run = async () => {
+      try {
+        if (searchDoctor.length >= 2) {
+          const data = await getMedicosPorNombreV2(searchDoctor)
+          const filtered = (data || []).filter((d: any) => (d.descripcion_item || d.specialty || d.especialidad) === formData.specialty)
+          setMedicosEspecialidad(
+            filtered.map((d: any) => ({
+              id: String(d.codigo_prestador || d.id),
+              name: d.nombre_prestador || d.name,
+              specialty: d.descripcion_item || d.specialty || d.especialidad
+            }))
+          )
+        } else {
+          const data = await getMedicosPorEspecialidadV2(formData.specialty)
+          setMedicosEspecialidad(
+            (data || []).map((d: any) => ({
+              id: String(d.codigo_prestador || d.id),
+              name: d.nombre_prestador || d.name,
+              specialty: d.descripcion_item || d.specialty || d.especialidad
+            }))
+          )
+        }
+      } catch (e) {
+        setErrorDoctors("Error al cargar médicos")
+        setMedicosEspecialidad([])
+      } finally {
+        setLoadingDoctors(false)
+      }
+    }
 
-  const locations = [
-    "Hospital Principal",
-    "Consulta Externa",
-    "Centro Médico Norte",
-    "Centro Médico Sur",
-    "Unidad de Emergencias",
-  ]
+    run()
+  }, [formData.specialty, searchDoctor])
+
+  const filteredDoctors = medicosEspecialidad
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(formData);
+    e.preventDefault()
+    onSubmit(formData)
   }
 
   const handleDoctorChange = (doctorId: string) => {
-    const doctor = medicosEspecialidad.find((d: { id: string; specialty: string }) => String(d.id) === String(doctorId));
+    const doctor = medicosEspecialidad.find((d: { id: string; specialty: string }) => String(d.id) === String(doctorId))
     setFormData((prev) => ({
       ...prev,
       doctorId: String(doctorId),
       specialty: doctor?.specialty || prev.specialty,
-    }));
+    }))
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#8B1538]">Gestión de Agendas</h2>
-        <p className="text-gray-600">Configure los horarios de atención médica</p>
+        <h2 className={componentStyles.scheduleForm.title}>Gestión de Agendas</h2>
+        <p className={componentStyles.scheduleForm.subtitle}>Configure los horarios de atención médica</p>
       </div>
 
       <Card>
@@ -163,8 +167,8 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
                     <SelectValue placeholder="Seleccionar especialidad" />
                   </SelectTrigger>
                   <SelectContent>
-                    {specialties.map((specialty) => (
-                      <SelectItem key={specialty} value={specialty}>
+                    {specialties.map((specialty, i) => (
+                      <SelectItem key={`${specialty}-${i}`} value={specialty}>
                         {specialty}
                       </SelectItem>
                     ))}
@@ -174,15 +178,19 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
 
               <div className="space-y-2">
                 <Label htmlFor="doctor">Médico</Label>
-                
+                <Input
+                  placeholder="Buscar por nombre (opcional)"
+                  value={searchDoctor}
+                  onChange={(e) => setSearchDoctor(e.target.value)}
+                />
                 <Select onValueChange={handleDoctorChange} value={formData.doctorId} required disabled={!formData.specialty || loadingDoctors}>
                   <SelectTrigger>
                     <SelectValue placeholder={formData.specialty ? (loadingDoctors ? "Cargando médicos..." : "Seleccionar médico") : "Seleccione una especialidad primero"} />
                   </SelectTrigger>
                   <SelectContent>
                     {errorDoctors && <div className="text-red-500 px-2 py-1">{errorDoctors}</div>}
-                    {(filteredDoctors || []).map((doctor) => (
-                      <SelectItem key={doctor.id} value={String(doctor.id)}>
+                    {(filteredDoctors || []).map((doctor, i) => (
+                      <SelectItem key={`${doctor.id}-${doctor.name}-${i}`} value={String(doctor.id)}>
                         {doctor.name}
                       </SelectItem>
                     ))}
@@ -191,88 +199,96 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="location">Localidad</Label>
-                <Select onValueChange={(value) => setFormData((prev) => ({ ...prev, location: value }))} required>
+                <Label htmlFor="location">Edificio</Label>
+                <Select onValueChange={(value) => { setEdificioSeleccionado(value); setFormData((prev) => ({ ...prev, location: value })) }} required>
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar localidad" />
+                    <SelectValue placeholder="Seleccionar edificio" />
                   </SelectTrigger>
                   <SelectContent>
-                    {locations.map((location) => (
-                      <SelectItem key={location} value={location}>
-                        {location}
-                      </SelectItem>
-                    ))}
+                    {edificios.map((e: any, i) => {
+                      const code = String(e.codigo ?? e.codigo_edificio ?? e.code ?? e.id ?? i)
+                      const label = String(e.descripcion ?? e.nombre ?? e.nombre_edificio ?? e.label ?? code)
+                      return (
+                        <SelectItem key={`${code}-${label}-${i}`} value={code}>
+                          {label}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="office">Piso</Label>
+                <Select onValueChange={(value) => { setPisoSeleccionado(value); }} disabled={!edificioSeleccionado}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar piso" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pisos.map((p: any, i) => {
+                      const code = String(p.codigo ?? p.codigo_piso ?? p.code ?? p.id ?? i)
+                      const label = String(p.descripcion ?? p.nombre ?? p.nombre_piso ?? p.label ?? code)
+                      return (
+                        <SelectItem key={`${code}-${label}-${i}`} value={code}>
+                          {label}
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="office">Consultorio</Label>
-                <Input
-                  id="office"
-                  placeholder="Ej: Consultorio 201"
-                  value={formData.office}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, office: e.target.value }))}
-                  required
-                />
+                <Select onValueChange={(value) => { setConsultorioSeleccionado(value); setFormData((prev) => ({ ...prev, office: value })) }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar consultorio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {consultorios.map((c: any, i) => {
+                      const code = String(c.codigo ?? c.codigo_consultorio ?? c.code ?? c.id ?? i)
+                      const label = String(c.descripcion ?? c.nombre ?? c.nombre_consultorio ?? c.label ?? code)
+                      return (
+                        <SelectItem key={`${code}-${label}-${i}`} value={code}>
+                          {label}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2 md:col-span-2">
                 <Label>Días de la Semana</Label>
-                <div className="grid grid-cols-7 gap-2">
-                  {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((day, index) => (
-                    <label key={day} className="cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        onChange={(e) => {
-                          const days = formData.weekDays || []
-                          if (e.target.checked) {
-                            setFormData((prev) => ({ ...prev, weekDays: [...days, index] }))
-                          } else {
-                            setFormData((prev) => ({ ...prev, weekDays: days.filter((d) => d !== index) }))
-                          }
-                        }}
-                      />
-                      <div
-                        className={`
-          border-2 rounded-lg p-3 text-center transition-all duration-200
-          ${
-            (formData.weekDays || []).includes(index)
-              ? "border-[#8B1538] bg-[#8B1538] text-white"
-              : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-          }
-        `}
-                      >
-                        <span className="text-sm font-medium">{day}</span>
-                      </div>
-                    </label>
-                  ))}
-                </div>
+                <WeekDaySelector
+                  items={dias.map((d: any, i) => {
+                    const codeRaw = Number(d.codigo ?? d.codigo_dia ?? d.id ?? i)
+                    const idx = Number.isFinite(codeRaw) && codeRaw >= 1 && codeRaw <= 7 ? codeRaw - 1 : codeRaw
+                    const label = String(d.descripcion ?? d.nombre ?? d.nombre_dia ?? d.label ?? idx)
+                    return { label, index: idx }
+                  })}
+                  selectedDays={formData.weekDays || []}
+                  onDayToggle={(dayIndex) => {
+                    const days = formData.weekDays || []
+                    setFormData((prev) => ({
+                      ...prev,
+                      weekDays: days.includes(dayIndex)
+                        ? days.filter((d) => d !== dayIndex)
+                        : [...days, dayIndex]
+                    }))
+                  }}
+                />
               </div>
 
               <div className="space-y-2">
                 <Label>Horario</Label>
-                <div className="flex space-x-2">
-                  <div className="flex-1">
-                    <Input
-                      type="time"
-                      placeholder="Hora inicio"
-                      value={formData.startTime}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, startTime: e.target.value }))}
-                      required
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <Input
-                      type="time"
-                      placeholder="Hora fin"
-                      value={formData.endTime}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, endTime: e.target.value }))}
-                      required
-                    />
-                  </div>
-                </div>
+                <TimeRangeSelector
+                  startTime={formData.startTime}
+                  endTime={formData.endTime}
+                  onStartTimeChange={(time) => setFormData((prev) => ({ ...prev, startTime: time }))}
+                  onEndTimeChange={(time) => setFormData((prev) => ({ ...prev, endTime: time }))}
+                  required
+                />
               </div>
             </div>
 
@@ -280,7 +296,7 @@ export function ScheduleForm({ onSubmit, doctors }: ScheduleFormProps) {
               <Button type="button" variant="outline">
                 Cancelar
               </Button>
-              <Button type="submit" className="bg-[#8B1538] hover:bg-[#6B1028] text-white">
+              <Button type="submit" className={componentStyles.scheduleForm.submitButton}>
                 <Clock className="h-4 w-4 mr-2" />
                 Crear Agenda
               </Button>

@@ -7,11 +7,39 @@ import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, MapPin, Building, Filter, Search } from "lucide-react"
 import type { Schedule } from "@/lib/types"
 
+// Datos mock - deberían venir de una API real
+const mockSchedules: Schedule[] = [
+  {
+    id: "1",
+    doctorId: "1",
+    doctorName: "María González",
+    specialty: "Cardiología",
+    location: "Hospital Principal",
+    office: "Consultorio 201",
+    weekDays: [1, 3, 5], // Martes, Jueves, Sábado
+    startTime: "08:00",
+    endTime: "12:00",
+    isAvailable: true,
+  },
+  {
+    id: "2",
+    doctorId: "2",
+    doctorName: "Carlos Mendoza",
+    specialty: "Neurología",
+    location: "Consulta Externa",
+    office: "Consultorio 305",
+    weekDays: [0, 2, 4], // Lunes, Miércoles, Viernes
+    startTime: "14:00",
+    endTime: "18:00",
+    isAvailable: true,
+  },
+]
+
 interface PublicScheduleProps {
-  schedules: Schedule[]
+  schedules?: Schedule[] // Opcional ahora
 }
 
-export function PublicSchedule({ schedules }: PublicScheduleProps) {
+export function PublicSchedule({ schedules = mockSchedules }: PublicScheduleProps) {
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>("all")
   const [selectedWeekDay, setSelectedWeekDay] = useState<string>("all")
 
@@ -19,7 +47,7 @@ export function PublicSchedule({ schedules }: PublicScheduleProps) {
 
   const filteredSchedules = schedules.filter((schedule) => {
     const matchesSpecialty = selectedSpecialty === "all" || schedule.specialty === selectedSpecialty
-    const matchesWeekDay = selectedWeekDay === "all" || new Date(schedule.date).getDay().toString() === selectedWeekDay
+    const matchesWeekDay = selectedWeekDay === "all" || schedule.weekDays.includes(parseInt(selectedWeekDay))
     return matchesSpecialty && matchesWeekDay && schedule.isAvailable
   })
 
@@ -31,13 +59,9 @@ export function PublicSchedule({ schedules }: PublicScheduleProps) {
     })
   }
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString("es-ES", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
+  const formatWeekDays = (weekDays: number[]) => {
+    const dayNames = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+    return weekDays.map(day => dayNames[day]).join(", ")
   }
 
   return (
@@ -117,7 +141,7 @@ export function PublicSchedule({ schedules }: PublicScheduleProps) {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
                       <div className="flex items-center space-x-2">
                         <Calendar className="h-4 w-4 text-[#8B1538]" />
-                        <span>{formatDate(schedule.date)}</span>
+                        <span>{formatWeekDays(schedule.weekDays)}</span>
                       </div>
 
                       <div className="flex items-center space-x-2">
