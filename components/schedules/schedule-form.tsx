@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, Edit, Plus, Save, X, MapPin, Building, User } from "lucide-react"
+import { componentStyles } from "@/styles"
 
 interface ScheduleFormProps {
   onSubmit: (scheduleData: any) => void
@@ -298,15 +299,15 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#8B1538]">Gestión de Agendas</h2>
-        <p className="text-gray-600">Seleccione un médico y edite campos específicos de sus horarios</p>
+        <h2 className={componentStyles.scheduleForm.title}>Gestión de Agendas</h2>
+        <p className={componentStyles.scheduleForm.subtitle}>Seleccione un médico y edite campos específicos de sus horarios</p>
       </div>
 
       {/* Selección de Médico */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <User className="h-5 w-5 text-[#8B1538]" />
+          <CardTitle className={componentStyles.scheduleManager.headerWithIcon}>
+            <User className={componentStyles.scheduleManager.headerIcon} />
             <span>Selección de Médico</span>
           </CardTitle>
         </CardHeader>
@@ -330,25 +331,25 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
       {selectedDoctorId && (
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center space-x-2">
-                <Calendar className="h-5 w-5 text-[#8B1538]" />
+            <div className={componentStyles.scheduleManager.sectionHeaderRow}>
+              <CardTitle className={componentStyles.scheduleManager.headerWithIcon}>
+                <Calendar className={componentStyles.scheduleManager.headerIcon} />
                 <span>Agendas del Médico</span>
               </CardTitle>
-              <Button onClick={handleAddNewSchedule} className="bg-[#8B1538] hover:bg-[#6B1028] text-white">
+              <Button onClick={handleAddNewSchedule} className={componentStyles.scheduleManager.addButton}>
                 <Plus className="h-4 w-4 mr-2" />
                 Agregar Nueva Agenda
               </Button>
             </div>
-            <p className="text-sm text-gray-600">Haga clic en el ícono de edición junto a cualquier campo para modificarlo individualmente</p>
+            <p className={componentStyles.scheduleForm.subtitle}>Haga clic en el ícono de edición junto a cualquier campo para modificarlo individualmente</p>
           </CardHeader>
           <CardContent>
             {doctorSchedules.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <Calendar className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+              <div className={componentStyles.scheduleManager.emptyState}>
+                <Calendar className={componentStyles.scheduleManager.emptyIcon} />
                 <h3 className="text-lg font-medium mb-2">No hay agendas configuradas</h3>
                 <p className="text-sm mb-4">Este médico no tiene horarios asignados aún</p>
-                <Button onClick={handleAddNewSchedule} className="bg-[#8B1538] hover:bg-[#6B1028] text-white">
+                <Button onClick={handleAddNewSchedule} className={componentStyles.scheduleManager.addButton}>
                   <Plus className="h-4 w-4 mr-2" />
                   Crear Primera Agenda
                 </Button>
@@ -356,21 +357,21 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
             ) : (
               <div className="space-y-6">
                 {doctorSchedules.map((schedule, index) => (
-                  <div key={`${schedule.id}-${index}`} className="border rounded-lg p-6 bg-white shadow-sm">
+                  <div key={`${schedule.id}-${index}`} className={componentStyles.scheduleManager.scheduleCard}>
                     <div className="flex items-center justify-between mb-4">
-                      <Badge className="bg-[#8B1538] text-white">Agenda #{index + 1}</Badge>
+                      <Badge className="bg-primary-main text-white">Agenda #{index + 1}</Badge>
                       <Badge
                         variant="outline"
-                        className={schedule.isAvailable ? "border-green-500 text-green-700" : "border-red-500 text-red-700"}
+                        className={schedule.isAvailable ? componentStyles.scheduleManager.statusBadgeActive : componentStyles.scheduleManager.statusBadgeInactive}
                       >
                         {schedule.isAvailable ? "Activa" : "Inactiva"}
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className={componentStyles.scheduleManager.grid}>
                       {/* Especialidad */}
                       <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Especialidad</Label>
+                        <Label className={componentStyles.scheduleManager.fieldLabel}>Especialidad</Label>
                         <EditableField
                           scheduleId={schedule.id}
                           field="specialty"
@@ -383,8 +384,8 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
 
                       {/* Ubicación */}
                       <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center">
-                          <MapPin className="h-3 w-3 mr-1" />
+                        <Label className={componentStyles.scheduleManager.fieldLabel + ' flex items-center'}>
+                          <MapPin className={componentStyles.scheduleManager.fieldLabelIcon} />
                           Ubicación
                         </Label>
                         <EditableField
@@ -399,8 +400,8 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
 
                       {/* Consultorio */}
                       <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center">
-                          <Building className="h-3 w-3 mr-1" />
+                        <Label className={componentStyles.scheduleManager.fieldLabel + ' flex items-center'}>
+                          <Building className={componentStyles.scheduleManager.fieldLabelIcon} />
                           Consultorio
                         </Label>
                         <EditableField
@@ -413,8 +414,8 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
 
                       {/* Hora Inicio */}
                       <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center">
-                          <Clock className="h-3 w-3 mr-1" />
+                        <Label className={componentStyles.scheduleManager.fieldLabel + ' flex items-center'}>
+                          <Clock className={componentStyles.scheduleManager.fieldLabelIcon} />
                           Hora Inicio
                         </Label>
                         <EditableField
@@ -428,8 +429,8 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
 
                       {/* Hora Fin */}
                       <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide flex items-center">
-                          <Clock className="h-3 w-3 mr-1" />
+                        <Label className={componentStyles.scheduleManager.fieldLabel + ' flex items-center'}>
+                          <Clock className={componentStyles.scheduleManager.fieldLabelIcon} />
                           Hora Fin
                         </Label>
                         <EditableField
@@ -443,13 +444,13 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
 
                       {/* Días de Atención */}
                       <div className="space-y-2">
-                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Días de Atención</Label>
+                        <Label className={componentStyles.scheduleManager.fieldLabel}>Días de Atención</Label>
                         <EditableField
                           scheduleId={schedule.id}
                           field="weekDays"
                           value={schedule.weekDays}
                           displayValue={
-                            <div className="flex flex-wrap gap-1">
+                            <div className={componentStyles.scheduleManager.weekDaysBadges}>
                               {[...new Set<number>(schedule.weekDays)].map((dayIndex) => (
                                 <Badge key={dayIndex} variant="secondary" className="text-xs">
                                   {dayNames[dayIndex]}
@@ -463,14 +464,14 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                     </div>
 
                     {/* Acciones rápidas */}
-                    <div className="mt-6 pt-4 border-t flex justify-between items-center">
-                      <div className="text-xs text-gray-500">Última modificación: Hace 2 horas</div>
+                    <div className={componentStyles.scheduleManager.quickActions.container}>
+                      <div className={componentStyles.scheduleManager.quickActions.lastUpdate}>Última modificación: Hace 2 horas</div>
                       <div className="flex space-x-2">
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => onSubmit({ scheduleId: schedule.id, action: "toggleStatus" })}
-                          className={schedule.isAvailable ? "border-red-500 text-red-500 hover:bg-red-50" : "border-green-500 text-green-500 hover:bg-green-50"}
+                          className={schedule.isAvailable ? componentStyles.scheduleManager.quickActions.toggleActive : componentStyles.scheduleManager.quickActions.toggleInactive}
                         >
                           {schedule.isAvailable ? "Desactivar" : "Activar"}
                         </Button>
@@ -478,7 +479,7 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                           size="sm"
                           variant="outline"
                           onClick={() => onSubmit({ scheduleId: schedule.id, action: "duplicate" })}
-                          className="border-blue-500 text-blue-500 hover:bg-blue-50"
+                          className={componentStyles.scheduleManager.quickActions.duplicate}
                         >
                           Duplicar
                         </Button>
@@ -486,7 +487,7 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                           size="sm"
                           variant="outline"
                           onClick={() => onSubmit({ scheduleId: schedule.id, action: "delete" })}
-                          className="border-red-500 text-red-500 hover:bg-red-50"
+                          className={componentStyles.scheduleManager.quickActions.delete}
                         >
                           Eliminar
                         </Button>
