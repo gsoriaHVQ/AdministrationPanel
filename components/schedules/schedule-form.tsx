@@ -8,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, Edit, Plus, Save, X, MapPin, Building, User } from "lucide-react"
+import { getCatalogoDias, getCatalogoEdificios, getPisosPorEdificio, getCatalogoConsultorios, getEspecialidadesV2 } from "@/lib/api"
 import { componentStyles } from "@/styles"
+import { getAgendasByPrestador, updateAgendaField } from "@/lib/api"
 
 interface ScheduleFormProps {
   onSubmit: (scheduleData: any) => void
@@ -35,82 +37,56 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
     value: any
   } | null>(null)
 
-  const specialties = [
-    "Cardiología",
-    "Dermatología",
-    "Endocrinología",
-    "Gastroenterología",
-    "Ginecología",
-    "Neurología",
-    "Oftalmología",
-    "Ortopedia",
-    "Pediatría",
-    "Psiquiatría",
-    "Radiología",
-    "Urología",
-  ]
-
-  const locations = [
-    "Hospital Principal",
-    "Consulta Externa",
-    "Centro Médico Norte",
-    "Centro Médico Sur",
-    "Unidad de Emergencias",
-  ]
+  // Catálogo de especialidades (desde API)
+  const [specialties, setSpecialties] = useState<string[]>([])
 
   const dayNames = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 
-  // Datos quemados (mock) para fase inicial
-  const mockDoctors: Array<{ id: string; name: string; specialty: string }> = [
-    { id: "d1", name: "María González", specialty: "Cardiología" },
-    { id: "d2", name: "Carlos Mendoza", specialty: "Neurología" },
-    { id: "d3", name: "Ana Torres", specialty: "Dermatología" },
-  ]
-
-  const mockSchedules: Array<{
-    id: string
-    doctorId: string
-    specialty: string
-    location: string
-    office: string
-    weekDays: number[]
-    startTime: string
-    endTime: string
-    isAvailable: boolean
-  }> = [
-    {
-      id: "s1",
-      doctorId: "d1",
-      specialty: "Cardiología",
-      location: "Hospital Principal",
-      office: "Consultorio 201",
-      weekDays: [0, 2, 4],
-      startTime: "08:00",
-      endTime: "12:00",
-      isAvailable: true,
-    },
-    {
-      id: "s2",
-      doctorId: "d2",
-      specialty: "Neurología",
-      location: "Consulta Externa",
-      office: "Consultorio 305",
-      weekDays: [1, 3],
-      startTime: "14:00",
-      endTime: "18:00",
-      isAvailable: false,
-    },
-  ]
-
-  // En modo mock forzamos usar doctores quemados
-  const doctorsToUse = mockDoctors
-
-  // Pre-seleccionar el primer médico mock para mostrar una agenda por defecto
+  // Cargar especialidades al montar
   useEffect(() => {
-    if (!selectedDoctorId && doctorsToUse.length > 0) {
-      setSelectedDoctorId(doctorsToUse[0].id)
+    getEspecialidadesV2()
+      .then((items) => setSpecialties((items || []).filter(Boolean)))
+      .catch(() => setSpecialties([]))
+  }, [])
+
+  // Catálogos (endpoint real)
+  const [diasCatalog, setDiasCatalog] = useState<Array<{ codigo: string; descripcion: string }>>([])
+  const [edificiosCatalog, setEdificiosCatalog] = useState<Array<{ codigo: string; descripcion: string }>>([])
+  const [pisosByEdificio, setPisosByEdificio] = useState<Record<string, Array<{ codigo: string; descripcion: string }>>>({})
+  const [consultoriosCatalog, setConsultoriosCatalog] = useState<Array<{ codigo: string; descripcion: string; codigo_edificio?: string; codigo_piso?: string }>>([])
+
+  useEffect(() => {
+    getCatalogoDias().then(setDiasCatalog).catch(() => setDiasCatalog([]))
+    getCatalogoEdificios().then(setEdificiosCatalog).catch(() => setEdificiosCatalog([]))
+    getCatalogoConsultorios().then((items: any[]) => {
+      const mapped = (items || []).map((it) => ({
+        codigo: String(it.codigo_consultorio ?? it.codigo),
+        descripcion: String(it.descripcion_consultorio ?? it.descripcion),
+        codigo_edificio: String(it.codigo_edificio ?? it.edificio ?? ""),
+        codigo_piso: String(it.codigo_piso ?? it.piso ?? ""),
+      }))
+      setConsultoriosCatalog(mapped)
+    }).catch(() => setConsultoriosCatalog([]))
+  }, [])
+
+  const loadPisos = async (codigoEdificio: string) => {
+    if (!codigoEdificio) return
+    if (pisosByEdificio[codigoEdificio]) return
+    try {
+      const pisos = await getPisosPorEdificio(codigoEdificio)
+      setPisosByEdificio((prev) => ({ ...prev, [codigoEdificio]: pisos }))
+    } catch {
+      // noop
     }
-  }, [selectedDoctorId, doctorsToUse])
+  }
+
+  // Pre-cargar pisos para las agendas visibles
+  useEffect(() => {
+    const edificiosUnicos = Array.from(new Set((doctorSchedules || []).map((s) => String(s.location || ""))).values())
+    edificiosUnicos.forEach((ed) => {
+      if (ed) void loadPisos(ed)
+    })
+  }, [doctorSchedules])
 
   const areSchedulesEqual = (a: any[], b: any[]) => {
     if (a === b) return true
@@ -121,17 +97,46 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
     return true
   }
 
-  // Cargar agendas del médico seleccionado y resetear edición
+  // Cargar agendas del médico seleccionado desde backend y resetear edición
   useEffect(() => {
-    if (selectedDoctorId) {
-      const source = mockSchedules
-      const schedules = source.filter((s) => s.doctorId === selectedDoctorId)
-      setDoctorSchedules((prev) => (areSchedulesEqual(prev, schedules) ? prev : schedules))
-    } else {
+    if (!selectedDoctorId) {
       setDoctorSchedules((prev) => (prev.length === 0 ? prev : []))
+      if (editingField !== null) setEditingField(null)
+      return
     }
-    if (editingField !== null) setEditingField(null)
-  }, [selectedDoctorId, existingSchedules])
+
+    // limpiar mientras carga para evitar ver agendas de otro médico
+    setDoctorSchedules([])
+
+    getAgendasByPrestador(selectedDoctorId)
+      .then((rows) => {
+        const onlySelected = (rows || []).filter((r: any) => {
+          const prestador = String(r.codigo_prestador ?? r.doctorId ?? r.prestador ?? "")
+          return prestador === String(selectedDoctorId)
+        })
+        const mapped = onlySelected.map((r: any, idx: number) => ({
+          id: String(r.id ?? r.codigo_agenda ?? `${selectedDoctorId}-${idx}`),
+          doctorId: String(r.codigo_prestador ?? selectedDoctorId),
+          specialty: String(r.descripcion_item ?? r.especialidad ?? ""),
+          location: String(r.codigo_edificio ?? r.edificio ?? ""), // código
+          office: String(r.codigo_consultorio ?? r.consultorio ?? ""), // código
+          weekDays: Array.isArray(r.codigo_dia)
+            ? r.codigo_dia.map((d: any) => Number(d))
+            : r.codigo_dia != null
+            ? [Number(r.codigo_dia)]
+            : [],
+          startTime: String(r.hora_inicio ?? ""),
+          endTime: String(r.hora_fin ?? ""),
+          isAvailable: Boolean(r.activo ?? r.isAvailable ?? true),
+          floor: String(r.codigo_piso ?? r.piso ?? ""),
+        }))
+        setDoctorSchedules(mapped)
+      })
+      .catch(() => setDoctorSchedules([]))
+      .finally(() => {
+        if (editingField !== null) setEditingField(null)
+      })
+  }, [selectedDoctorId])
 
   const handleDoctorChange = (doctorId: string) => {
     if (doctorId !== selectedDoctorId) {
@@ -174,8 +179,16 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
       action: "updateField",
     }
 
-    onSubmit(updatedSchedule)
-    setEditingField(null)
+    // Actualizar en backend (PUT campo a campo)
+    void updateAgendaField(updatedSchedule.scheduleId, updatedSchedule.field, updatedSchedule.value)
+      .then(() => {
+        // Refrescar localmente el valor editado para feedback inmediato
+        setDoctorSchedules((prev) => prev.map((s) => {
+          if (s.id !== updatedSchedule.scheduleId) return s
+          return { ...s, [updatedSchedule.field]: updatedSchedule.value }
+        }))
+      })
+      .finally(() => setEditingField(null))
   }
 
   const handleFieldCancel = () => {
@@ -183,20 +196,23 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
   }
 
   const handleAddNewSchedule = () => {
-    const doctor = doctorsToUse.find((d) => d.id === selectedDoctorId)
+    const doctor = doctors.find((d) => d.id === selectedDoctorId)
     const newSchedule = {
       doctorId: selectedDoctorId,
       doctorName: doctor?.name || "",
       specialty: doctor?.specialty || "",
-      location: "",
-      office: "",
-      weekDays: [],
+      location: "", // codigo_edificio
+      floor: "", // codigo_piso
+      office: "", // codigo_consultorio
+      weekDays: [], // codigo_dia
       startTime: "",
       endTime: "",
       action: "create",
     }
     onSubmit(newSchedule)
   }
+
+  type OptionLike = string | { value: string; label: string }
 
   const EditableField = ({
     scheduleId,
@@ -211,9 +227,10 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
     value: any
     displayValue: ReactNode
     type?: "text" | "time" | "select" | "multiselect"
-    options?: string[] | null
+    options?: OptionLike[] | null
   }) => {
     const isEditing = editingField?.scheduleId === scheduleId && editingField?.field === field
+    const currentSchedule = doctorSchedules.find((s) => s.id === scheduleId)
 
     if (isEditing) {
       return (
@@ -227,11 +244,15 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {options.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
+                {options.map((option) => {
+                  const val = typeof option === 'string' ? option : option.value
+                  const label = typeof option === 'string' ? option : option.label
+                  return (
+                    <SelectItem key={val} value={val}>
+                      {label}
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
           ) : type === "multiselect" ? (
@@ -317,8 +338,8 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
               <SelectValue placeholder="Seleccionar médico para gestionar sus agendas" />
             </SelectTrigger>
             <SelectContent>
-              {doctorsToUse.map((doctor) => (
-                <SelectItem key={doctor.id} value={doctor.id}>
+              {doctors.map((doctor, idx) => (
+                <SelectItem key={`${doctor.id}-${idx}`} value={doctor.id}>
                   {doctor.name} - {doctor.specialty}
                 </SelectItem>
               ))}
@@ -392,9 +413,25 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                           scheduleId={schedule.id}
                           field="location"
                           value={schedule.location}
-                          displayValue={schedule.location}
+                          displayValue={edificiosCatalog.find((e) => e.codigo === String(schedule.location))?.descripcion || ''}
                           type="select"
-                          options={locations}
+                          options={edificiosCatalog.map((e) => ({ value: e.codigo, label: e.descripcion })) as OptionLike[]}
+                        />
+                      </div>
+
+                      {/* Piso */}
+                      <div className="space-y-2">
+                        <Label className={componentStyles.scheduleManager.fieldLabel + ' flex items-center'}>
+                          <Building className={componentStyles.scheduleManager.fieldLabelIcon} />
+                          Piso
+                        </Label>
+                        <EditableField
+                          scheduleId={schedule.id}
+                          field="floor"
+                          value={(schedule as any).floor}
+                          displayValue={(pisosByEdificio[String(schedule.location)] || []).find((p) => p.codigo === String((schedule as any).floor))?.descripcion || ''}
+                          type="select"
+                          options={(pisosByEdificio[String(schedule.location)] || []).map((p) => ({ value: p.codigo, label: p.descripcion })) as OptionLike[]}
                         />
                       </div>
 
@@ -408,7 +445,11 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                           scheduleId={schedule.id}
                           field="office"
                           value={schedule.office}
-                          displayValue={schedule.office}
+                          displayValue={consultoriosCatalog.find((c) => String(c.codigo) === String(schedule.office))?.descripcion || ''}
+                          type="select"
+                          options={consultoriosCatalog
+                            .filter((c) => String(c.codigo_edificio || '') === String(schedule.location) && String(c.codigo_piso || '') === String((schedule as any).floor))
+                            .map((c) => ({ value: c.codigo, label: c.descripcion })) as OptionLike[]}
                         />
                       </div>
 
@@ -451,9 +492,9 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                           value={schedule.weekDays}
                           displayValue={
                             <div className={componentStyles.scheduleManager.weekDaysBadges}>
-                              {[...new Set<number>(schedule.weekDays)].map((dayIndex) => (
-                                <Badge key={dayIndex} variant="secondary" className="text-xs">
-                                  {dayNames[dayIndex]}
+                              {[...new Set<string | number>(schedule.weekDays)].map((code) => (
+                                <Badge key={String(code)} variant="secondary" className="text-xs">
+                                  {diasCatalog.find((d) => String(d.codigo) === String(code))?.descripcion || dayNames[Number(code)] || String(code)}
                                 </Badge>
                               ))}
                             </div>

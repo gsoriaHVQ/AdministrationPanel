@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Calendar, Users, Clock, Eye } from "lucide-react"
 
 import { useEffect } from "react"
-import { getMedicos } from "@/lib/api"
+import { getMedicosV2Active } from "@/lib/api"
 
 export default function HVQMedicalScheduler() {
 	const [currentView, setCurrentView] = useState<
@@ -26,20 +26,21 @@ export default function HVQMedicalScheduler() {
 
 useEffect(() => {
   if (currentView === "doctors") {
-	getMedicos()
-	  .then((data) =>
-		setDoctors(
-		  data.map((d: any) => ({
-			id: d.codigo_prestador,
-			name: d.nombre_prestador,
-			specialty: d.descripcion_item,
-			email: d.mnemonico || "",
-			phone: "", // o el campo correcto si lo tienes
-			isActive: true, // o el campo correcto si lo tienes
-		  }))
-		)
-	  )
-	  .catch((e) => setDoctorsError(e.message))
+    getMedicosV2Active("ACTIVE")
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])
+        setDoctors(
+          list.map((d: any, idx: number) => ({
+            id: String(d.codigo_prestador ?? d.id ?? idx),
+            name: String(d.nombres ?? d.nombre_prestador ?? d.name ?? ""),
+            specialty: String(d.descripcion_item ?? d.especialidad ?? d.specialty ?? ""),
+            email: String(d.mnemonico ?? d.email ?? ""),
+            phone: String(d.telefono ?? d.phone ?? ""),
+            isActive: true,
+          }))
+        )
+      })
+      .catch((e) => setDoctorsError(e.message))
   }
 }, [currentView])
 

@@ -37,6 +37,10 @@ function mapCatalog(items: any[]): Array<{ codigo: string; descripcion: string }
 
     const descripcion =
       it.descripcion ??
+      it.descripcion_consultorio ??
+      it.descripcion_edificio ??
+      it.descripcion_piso ??
+      it.descripcion_dia ??
       it.nombre ??
       it.label ??
       it.nombre_consultorio ??
@@ -84,6 +88,13 @@ export async function getAgendas(): Promise<Agenda[]> {
   return handleResponse(res);
 }
 
+export async function getAgendasByPrestador(codigoPrestador: string): Promise<any[]> {
+  const url = `${API_URL}/api/agnd-agenda?codigo_prestador=${encodeURIComponent(codigoPrestador)}`
+  const res = await fetch(url)
+  const data = await handleResponse(res)
+  return toArray(data)
+}
+
 export async function getAgendaById(id: string): Promise<Agenda> {
   const res = await fetch(`${API_URL}/api/agnd-agenda/${encodeURIComponent(id)}`);
   return handleResponse(res);
@@ -107,6 +118,16 @@ export async function updateAgenda(id: string, payload: AgendaUpdatePayload): Pr
   return handleResponse(res);
 }
 
+// Campo-a-campo simple para compatibilidad rápida
+export async function updateAgendaField(id: string, field: string, value: any) {
+  const res = await fetch(`${API_URL}/api/agnd-agenda/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ [field]: value }),
+  })
+  return handleResponse(res)
+}
+
 export async function deleteAgenda(id: string): Promise<{ success: boolean } | undefined> {
   const res = await fetch(`${API_URL}/api/agnd-agenda/${encodeURIComponent(id)}`, {
     method: "DELETE",
@@ -120,6 +141,12 @@ export async function deleteAgenda(id: string): Promise<{ success: boolean } | u
 export async function getMedicosV2() {
   const res = await fetch(`${API_URL}/api/medicos`);
   return handleResponse(res);
+}
+
+export async function getMedicosV2Active(situationType: string = "ACTIVE") {
+  const url = `${API_URL}/api/medicos?situationType=${encodeURIComponent(situationType)}`
+  const res = await fetch(url)
+  return handleResponse(res)
 }
 
 export async function getEspecialidadesV2() {
