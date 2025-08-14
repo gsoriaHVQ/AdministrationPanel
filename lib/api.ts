@@ -57,9 +57,20 @@ function mapCatalog(items: any[]): Array<{ codigo: string; descripcion: string }
 // Catálogos
 // -------------------------
 export async function getCatalogoConsultorios() {
-  const res = await fetch(`${API_URL}/api/catalogos/consultorios`);
-  const data = await handleResponse(res);
-  return mapCatalog(toArray(data));
+  const res = await fetch(`${API_URL}/api/catalogos/consultorios`)
+  const data = await handleResponse(res)
+  const items = toArray(data)
+  // Preserva edificio y piso además de codigo/descripcion
+  return (items || []).map((it: any) => ({
+    codigo: String(
+      it.codigo_consultorio ?? it.cd_consultorio ?? it.consultorio ?? it.codigo ?? it.id ?? ""
+    ),
+    descripcion: String(
+      it.descripcion_consultorio ?? it.des_consultorio ?? it.nombre_consultorio ?? it.descripcion ?? it.nombre ?? ""
+    ),
+    codigo_edificio: String(it.codigo_edificio ?? it.cd_edificio ?? it.edificio ?? ""),
+    codigo_piso: String(it.codigo_piso ?? it.cd_piso ?? it.piso ?? ""),
+  }))
 }
 
 export async function getCatalogoDias() {
@@ -75,9 +86,29 @@ export async function getCatalogoEdificios() {
 }
 
 export async function getPisosPorEdificio(codigoEdificio: string) {
-  const res = await fetch(`${API_URL}/api/catalogos/edificios/${encodeURIComponent(codigoEdificio)}/pisos`);
-  const data = await handleResponse(res);
-  return mapCatalog(toArray(data));
+  const res = await fetch(`${API_URL}/api/catalogos/edificios/${encodeURIComponent(codigoEdificio)}/pisos`)
+  const data = await handleResponse(res)
+  const items = toArray(data)
+  // Normaliza múltiples variantes de nombres de columnas
+  const mapped = (items || []).map((it: any) => {
+    const codigo = String(
+      it.codigo ?? it.code ?? it.id ?? it.codigo_piso ?? it.cd_piso ?? it.piso ?? it.value ?? ""
+    )
+    const descripcion = String(
+      it.descripcion ?? it.nombre ?? it.label ?? it.descripcion_piso ?? it.des_piso ?? it.nombre_piso ?? `PISO ${codigo}`
+    )
+    return { codigo, descripcion }
+  })
+  // Elimina duplicados y ordena por código numérico cuando aplique
+  const seen = new Set<string>()
+  const unique = mapped.filter((p) => {
+    const key = String(p.codigo)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  unique.sort((a, b) => Number(a.codigo) - Number(b.codigo))
+  return unique
 }
 
 // -------------------------

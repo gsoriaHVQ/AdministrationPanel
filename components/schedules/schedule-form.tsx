@@ -10,6 +10,8 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Clock, Edit, Plus, Save, X, MapPin, Building, User, ChevronsUpDown, Check } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { CreateScheduleForm } from "./create-schedule"
 import { getCatalogoDias, getCatalogoEdificios, getPisosPorEdificio, getCatalogoConsultorios, getEspecialidadesV2, getMedicosPorEspecialidadV2 } from "@/lib/api"
 import { componentStyles } from "@/styles"
 import { getAgendasByPrestador, updateAgendaField } from "@/lib/api"
@@ -147,6 +149,28 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
     }
   }
 
+  // Combina pisos oficiales + derivados de consultorios para un edificio
+  const getMergedFloorsForLocation = (codigoEdificio: string): Array<{ codigo: string; descripcion: string }> => {
+    const loc = String(codigoEdificio || '')
+    const oficiales = pisosByEdificio[loc] || []
+    const derivados = consultoriosCatalog
+      .filter((c) => String(c.codigo_edificio || '') === loc && String(c.codigo_piso || ''))
+      .map((c) => {
+        const codigo = String(c.codigo_piso)
+        const match = oficiales.find((p) => String(p.codigo) === codigo)
+        return { codigo, descripcion: match?.descripcion || `PISO ${codigo}` }
+      })
+    const seen = new Set<string>()
+    const result: Array<{ codigo: string; descripcion: string }> = []
+    for (const p of [...oficiales, ...derivados]) {
+      const key = String(p.codigo)
+      if (seen.has(key)) continue
+      seen.add(key)
+      result.push({ codigo: key, descripcion: p.descripcion })
+    }
+    return result
+  }
+
   // Pre-cargar pisos para las agendas visibles
   useEffect(() => {
     const edificiosUnicos = Array.from(new Set((doctorSchedules || []).map((s) => String(s.location || ""))).values())
@@ -154,6 +178,25 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
       if (ed) void loadPisos(ed)
     })
   }, [doctorSchedules])
+
+  // Derivar edificio y piso desde consultorio cuando falten, y precargar pisos necesarios
+  useEffect(() => {
+    if (!consultoriosCatalog.length || !doctorSchedules.length) return
+    let changed = false
+    const updated = doctorSchedules.map((s) => {
+      if (!s || !s.office) return s
+      const info = consultoriosCatalog.find((c) => String(c.codigo) === String(s.office))
+      if (!info) return s
+      const inferredLocation = String(info.codigo_edificio || '')
+      const inferredFloor = String(info.codigo_piso || '')
+      const needsUpdate = (inferredLocation && inferredLocation !== String(s.location || '')) || (inferredFloor && inferredFloor !== String((s as any).floor || ''))
+      if (!needsUpdate) return s
+      changed = true
+      void loadPisos(inferredLocation)
+      return { ...s, location: inferredLocation || s.location, floor: inferredFloor || (s as any).floor }
+    })
+    if (changed) setDoctorSchedules(updated)
+  }, [consultoriosCatalog, doctorSchedules])
 
   const areSchedulesEqual = (a: any[], b: any[]) => {
     if (a === b) return true
@@ -283,10 +326,10 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
       // 1) Actualiza el campo editado
       await updateAgendaField(updatedSchedule.scheduleId, updatedSchedule.field, updatedSchedule.value)
       // feedback inmediato local
-      setDoctorSchedules((prev) => prev.map((s) => {
-        if (s.id !== updatedSchedule.scheduleId) return s
-        return { ...s, [updatedSchedule.field]: updatedSchedule.value }
-      }))
+        setDoctorSchedules((prev) => prev.map((s) => {
+          if (s.id !== updatedSchedule.scheduleId) return s
+          return { ...s, [updatedSchedule.field]: updatedSchedule.value }
+        }))
 
       // 2) Lógica de consistencia entre ubicación → piso → consultorio
       if (updatedSchedule.field === 'location') {
@@ -603,10 +646,25 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                 <Calendar className={componentStyles.scheduleManager.headerIcon} />
                 <span>Agendas del Médico</span>
               </CardTitle>
-              <Button onClick={handleAddNewSchedule} className={componentStyles.scheduleManager.addButton}>
-                <Plus className="h-4 w-4 mr-2" />
-                Agregar Nueva Agenda
-              </Button>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className={componentStyles.scheduleManager.addButton}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Agregar Nueva Agenda
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-3xl">
+                  <DialogHeader>
+                    <DialogTitle>Nueva agenda</DialogTitle>
+                  </DialogHeader>
+                  <CreateScheduleForm
+                    doctors={doctors}
+                    defaultDoctorId={selectedDoctorId}
+                    onCancel={() => {}}
+                    onCreate={(payload) => onSubmit(payload)}
+                  />
+                </DialogContent>
+              </Dialog>
             </div>
             <p className={componentStyles.scheduleForm.subtitle}>Haga clic en el ícono de edición junto a cualquier campo para modificarlo individualmente</p>
           </CardHeader>
@@ -616,10 +674,25 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                 <Calendar className={componentStyles.scheduleManager.emptyIcon} />
                 <h3 className="text-lg font-medium mb-2">No hay agendas configuradas</h3>
                 <p className="text-sm mb-4">Este médico no tiene horarios asignados aún</p>
-                <Button onClick={handleAddNewSchedule} className={componentStyles.scheduleManager.addButton}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Crear Primera Agenda
-                </Button>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button className={componentStyles.scheduleManager.addButton}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Crear Primera Agenda
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-3xl">
+                    <DialogHeader>
+                      <DialogTitle>Nueva agenda</DialogTitle>
+                    </DialogHeader>
+                    <CreateScheduleForm
+                      doctors={doctors}
+                      defaultDoctorId={selectedDoctorId}
+                      onCancel={() => {}}
+                      onCreate={(payload) => onSubmit(payload)}
+                    />
+                  </DialogContent>
+                </Dialog>
               </div>
             ) : (
               <div className="space-y-6">
@@ -643,14 +716,14 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                           const doctorForThis = doctors.find((d) => String(d.id) === String(schedule.doctorId))
                           const specialtyFallback = schedule.specialty || doctorForThis?.specialty || selectedSpecialty || ""
                           return (
-                            <EditableField
-                              scheduleId={schedule.id}
-                              field="specialty"
+                        <EditableField
+                          scheduleId={schedule.id}
+                          field="specialty"
                               value={specialtyFallback}
                               displayValue={specialtyFallback}
-                              type="select"
+                          type="select"
                               options={allSpecialties}
-                            />
+                        />
                           )
                         })()}
                       </div>
@@ -681,14 +754,9 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                           scheduleId={schedule.id}
                           field="floor"
                           value={(schedule as any).floor}
-                          displayValue={(
-                            (pisosByEdificio[String(schedule.location)] || []).find((p) => p.codigo === String((schedule as any).floor))?.descripcion
-                          ) || String((schedule as any).floor || '')}
+                          displayValue={(getMergedFloorsForLocation(String(schedule.location)).find((p) => p.codigo === String((schedule as any).floor))?.descripcion) || String((schedule as any).floor || '')}
                           type="select"
-                          options={[
-                            ...((pisosByEdificio[String(schedule.location)] || []).map((p) => ({ value: p.codigo, label: p.descripcion })) as OptionLike[]),
-                            ...(((schedule as any).floor ? [{ value: String((schedule as any).floor), label: String((schedule as any).floor) }] : []) as OptionLike[]),
-                          ]}
+                          options={getMergedFloorsForLocation(String(schedule.location)).map((p) => ({ value: String(p.codigo), label: p.descripcion })) as OptionLike[]}
                         />
                       </div>
 
@@ -704,14 +772,18 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                           value={schedule.office}
                           displayValue={consultoriosCatalog.find((c) => String(c.codigo) === String(schedule.office))?.descripcion || String(schedule.office || '')}
                           type="select"
-                          options={[
-                            ...(
-                              consultoriosCatalog
-                            .filter((c) => String(c.codigo_edificio || '') === String(schedule.location) && String(c.codigo_piso || '') === String((schedule as any).floor))
-                                .map((c) => ({ value: c.codigo, label: c.descripcion })) as OptionLike[]
-                            ),
-                            ...((schedule.office ? [{ value: String(schedule.office), label: String(schedule.office) }] : []) as OptionLike[]),
-                          ]}
+                          options={(() => {
+                            const byEdificio = consultoriosCatalog.filter((c) => String(c.codigo_edificio || '') === String(schedule.location))
+                            const filtered = (schedule as any).floor
+                              ? byEdificio.filter((c) => String(c.codigo_piso || '') === String((schedule as any).floor))
+                              : byEdificio
+                            const opts = filtered.map((c) => ({ value: String(c.codigo), label: c.descripcion })) as OptionLike[]
+                            // incluye el consultorio actual por si no calza con los filtros
+                            if (schedule.office && !filtered.find((c) => String(c.codigo) === String(schedule.office))) {
+                              opts.push({ value: String(schedule.office), label: String(schedule.office) })
+                            }
+                            return opts
+                          })()}
                         />
                       </div>
 

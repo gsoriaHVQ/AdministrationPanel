@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Calendar, Users, Clock, Eye } from "lucide-react"
 
 import { useEffect } from "react"
-import { getMedicosV2Active } from "@/lib/api"
+import { getMedicosV2Active, createAgenda, getMedicosPorEspecialidadV2, getAgendasByPrestador } from "@/lib/api"
 
 export default function HVQMedicalScheduler() {
 	const [currentView, setCurrentView] = useState<
@@ -44,6 +44,7 @@ useEffect(() => {
             email: String(d.mnemonico ?? d.email ?? ""),
             phone: String(d.telefono ?? d.phone ?? ""),
             isActive: true,
+            itemCode: String(d.codigo_item_agendamiento ?? d.cd_item_agendamiento ?? d.itemCode ?? ""),
           }))
         )
       })
@@ -81,9 +82,69 @@ useEffect(() => {
 		console.log("Ver horarios del médico:", doctorId)
 	}
 
-	const handleScheduleSubmit = (scheduleData: any) => {
-		console.log("Nueva agenda:", scheduleData)
-	}
+  const handleScheduleSubmit = async (scheduleData: any) => {
+    console.log("Nueva agenda:", scheduleData)
+    try {
+      if (scheduleData?.action === "create") {
+        const toDateTime = (hhmm?: string) => {
+          if (!hhmm) return ""
+          if (/\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}/.test(hhmm)) return hhmm
+          const today = new Date().toISOString().slice(0, 10)
+          return `${today} ${hhmm}`
+        }
+
+        const selectedDoctor = doctors.find((d) => String(d.id) === String(scheduleData.doctorId))
+        const payload: any = {
+          codigo_prestador: Number(scheduleData.doctorId),
+          codigo_consultorio: Number(scheduleData.office),
+          codigo_item_agendamiento: Number(
+            // prioridad: del schedule si viene, luego del doctor cargado
+            scheduleData.itemCode ?? selectedDoctor?.itemCode ?? 0
+          ),
+          codigo_dia: Number(Array.isArray(scheduleData.weekDays) ? scheduleData.weekDays[0] : scheduleData.weekDays),
+          hora_inicio: toDateTime(scheduleData.startTime),
+          hora_fin: toDateTime(scheduleData.endTime),
+        }
+        // Intento de resolución de item si no vino
+        if (!payload.codigo_item_agendamiento || payload.codigo_item_agendamiento <= 0) {
+          // 1) Buscar por especialidad → médicos y cruzar por prestador
+          if (scheduleData.specialty) {
+            try {
+              const data = await getMedicosPorEspecialidadV2(String(scheduleData.specialty))
+              const list = Array.isArray(data) ? data : (Array.isArray((data as any)?.items) ? (data as any).items : [])
+              const match = list.find((d: any) => String(d.codigo_prestador ?? d.id) === String(scheduleData.doctorId))
+              const itemFromSpec = Number(match?.codigo_item_agendamiento ?? match?.cd_item_agendamiento ?? 0)
+              if (itemFromSpec > 0) payload.codigo_item_agendamiento = itemFromSpec
+            } catch {}
+          }
+          // 2) Buscar en agendas existentes del prestador
+          if (!payload.codigo_item_agendamiento || payload.codigo_item_agendamiento <= 0) {
+            try {
+              const rows = await getAgendasByPrestador(String(scheduleData.doctorId))
+              const first = (rows || []).find((r: any) => {
+                const ds = String(r.descripcion_item ?? r.ds_item_agendamiento ?? r.especialidad ?? "")
+                return scheduleData.specialty ? ds.toLowerCase() === String(scheduleData.specialty).toLowerCase() : true
+              }) || (rows || [])[0]
+              const itemFromAgenda = Number(first?.codigo_item_agendamiento ?? first?.codigo_item ?? 0)
+              if (itemFromAgenda > 0) payload.codigo_item_agendamiento = itemFromAgenda
+            } catch {}
+          }
+          if (!payload.codigo_item_agendamiento || payload.codigo_item_agendamiento <= 0) {
+            throw new Error("Falta el código de Item de Agendamiento (CD_ITEM_AGENDAMENTO)")
+          }
+        }
+        await createAgenda(payload)
+        console.log("Agenda creada en BD")
+        // opcional: feedback al usuario o refrescar vista
+        alert("Agenda creada correctamente")
+      } else {
+        // otras acciones futuras: toggle, duplicate, delete
+      }
+    } catch (e: any) {
+      console.error("Error creando agenda", e)
+      alert(`Error creando agenda: ${e?.message || e}`)
+    }
+  }
 
 	if (currentView === "home") {
 		return (
