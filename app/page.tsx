@@ -25,7 +25,7 @@ export default function HVQMedicalScheduler() {
 	const [doctorsError, setDoctorsError] = useState<string>("")
 
 useEffect(() => {
-  if (currentView === "doctors") {
+  if (currentView === "doctors" || currentView === "schedules") {
     getMedicosV2Active("ACTIVE")
       .then((data) => {
         const list = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])
@@ -33,7 +33,14 @@ useEffect(() => {
           list.map((d: any, idx: number) => ({
             id: String(d.codigo_prestador ?? d.id ?? idx),
             name: String(d.nombres ?? d.nombre_prestador ?? d.name ?? ""),
-            specialty: String(d.descripcion_item ?? d.especialidad ?? d.specialty ?? ""),
+            specialty: String(
+              d.descripcion_agendamiento ??
+              d.descripcion_item ??
+              d.ds_item_agendamiento ??
+              d.especialidad ??
+              d.specialty ??
+              ""
+            ),
             email: String(d.mnemonico ?? d.email ?? ""),
             phone: String(d.telefono ?? d.phone ?? ""),
             isActive: true,
