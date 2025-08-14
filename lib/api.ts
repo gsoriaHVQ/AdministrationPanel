@@ -120,10 +120,35 @@ export async function updateAgenda(id: string, payload: AgendaUpdatePayload): Pr
 
 // Campo-a-campo simple para compatibilidad rápida
 export async function updateAgendaField(id: string, field: string, value: any) {
+  // Mapeo de nombres de campo UI -> backend
+  const backendFieldMap: Record<string, string> = {
+    location: "codigo_edificio",
+    floor: "codigo_piso",
+    office: "codigo_consultorio",
+    weekDays: "codigo_dia",
+    startTime: "hora_inicio",
+    endTime: "hora_fin",
+    specialty: "descripcion_item", // si backend requiere código, ajustar aquí
+  }
+  const backendField = backendFieldMap[field] ?? field
+  // Normalizaciones
+  let normalized = value
+  // Día único
+  if (backendField === 'codigo_dia' && Array.isArray(value)) {
+    normalized = value[0]
+  }
+  // Tiempos: si vienen como HH:mm, complementar con fecha actual para cumplir formato de BD
+  if ((backendField === 'hora_inicio' || backendField === 'hora_fin') && typeof value === 'string') {
+    if (!/\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}/.test(value)) {
+      const today = new Date().toISOString().slice(0, 10)
+      normalized = `${today} ${value}`
+    }
+  }
+  const payload: any = { [backendField]: normalized }
   const res = await fetch(`${API_URL}/api/agnd-agenda/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ [field]: value }),
+    body: JSON.stringify(payload),
   })
   return handleResponse(res)
 }

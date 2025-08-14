@@ -45,7 +45,7 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
   // Cargar especialidades al montar
   useEffect(() => {
     getEspecialidadesV2()
-      .then((items) => setSpecialties((items || []).filter(Boolean)))
+      .then((items) => setSpecialties(Array.from(new Set((items || []).filter(Boolean)))))
       .catch(() => setSpecialties([]))
   }, [])
 
@@ -106,10 +106,11 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
     }
 
     // limpiar mientras carga para evitar ver agendas de otro médico
-    setDoctorSchedules([])
+      setDoctorSchedules([])
 
     getAgendasByPrestador(selectedDoctorId)
       .then((rows) => {
+        const doctorForSelected = doctors.find((d) => String(d.id) === String(selectedDoctorId))
         const onlySelected = (rows || []).filter((r: any) => {
           const prestador = String(r.codigo_prestador ?? r.doctorId ?? r.prestador ?? "")
           return prestador === String(selectedDoctorId)
@@ -117,7 +118,7 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
         const mapped = onlySelected.map((r: any, idx: number) => ({
           id: String(r.id ?? r.codigo_agenda ?? `${selectedDoctorId}-${idx}`),
           doctorId: String(r.codigo_prestador ?? selectedDoctorId),
-          specialty: String(r.descripcion_item ?? r.especialidad ?? ""),
+          specialty: String(r.descripcion_item ?? r.especialidad ?? doctorForSelected?.specialty ?? ""),
           location: String(r.codigo_edificio ?? r.edificio ?? ""), // código
           office: String(r.codigo_consultorio ?? r.consultorio ?? ""), // código
           weekDays: Array.isArray(r.codigo_dia)
@@ -129,6 +130,7 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
           endTime: String(r.hora_fin ?? ""),
           isAvailable: Boolean(r.activo ?? r.isAvailable ?? true),
           floor: String(r.codigo_piso ?? r.piso ?? ""),
+          itemCode: String(r.codigo_item_agendamiento ?? r.codigo_item ?? ""),
         }))
         setDoctorSchedules(mapped)
       })
@@ -140,20 +142,33 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
 
   const handleDoctorChange = (doctorId: string) => {
     if (doctorId !== selectedDoctorId) {
-      setSelectedDoctorId(doctorId)
+    setSelectedDoctorId(doctorId)
       if (editingField !== null) setEditingField(null)
     }
   }
 
   const formatTime = (time?: string) => {
     if (!time || typeof time !== "string" || time.trim().length === 0) return "—"
-    const date = new Date(`2000-01-01T${time}`)
+    let date: Date
+    if (/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(time)) {
+      // viene con fecha
+      const iso = time.replace(" ", "T")
+      date = new Date(iso)
+    } else {
+      date = new Date(`2000-01-01T${time}`)
+    }
     if (Number.isNaN(date.getTime())) return "—"
     return date.toLocaleTimeString("es-ES", {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
     })
+  }
+
+  const extractTimeHHMM = (value?: string): string => {
+    if (!value) return ""
+    const m = value.match(/(\d{2}:\d{2})/)
+    return m ? m[1] : value
   }
 
   const handleFieldEdit = (scheduleId: string, field: string, currentValue: any) => {
@@ -167,10 +182,20 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
   const handleFieldSave = () => {
     if (!editingField) return
 
-    const normalizedValue =
-      editingField.field === "weekDays"
-        ? Array.from(new Set<number>(editingField.value || []))
-        : editingField.value
+    let normalizedValue: any
+    if (editingField.field === "weekDays") {
+      normalizedValue = Number(Array.isArray(editingField.value) ? editingField.value[0] : editingField.value)
+    } else if (editingField.field === "startTime" || editingField.field === "endTime") {
+      const schedule = doctorSchedules.find((s) => s.id === editingField.scheduleId)
+      const inputTime = String(editingField.value)
+      const existing = String(schedule?.[editingField.field] || "")
+      const dateMatch = existing.match(/(\d{4}-\d{2}-\d{2})/)
+      const datePart = dateMatch ? dateMatch[1] : new Date().toISOString().slice(0, 10)
+      normalizedValue = `${datePart} ${inputTime}`
+    } else {
+      normalizedValue = editingField.value
+    }
+
 
     const updatedSchedule = {
       scheduleId: editingField.scheduleId,
@@ -250,39 +275,38 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                   return (
                     <SelectItem key={val} value={val}>
                       {label}
-                    </SelectItem>
+                  </SelectItem>
                   )
                 })}
               </SelectContent>
             </Select>
           ) : type === "multiselect" ? (
             <div className="flex flex-wrap gap-1 max-w-xs">
-              {dayNames.map((day, index) => (
-                <label key={day} className="cursor-pointer">
+              {(diasCatalog.length ? diasCatalog : dayNames.map((d, i) => ({ codigo: String(i), descripcion: d }))).map((d) => {
+                const codeNum = Number(d.codigo)
+                const current = editingField.value
+                const isChecked = Array.isArray(current) ? current.includes(codeNum) : Number(current) === codeNum
+                return (
+                <label key={`${d.codigo}-${d.descripcion}`} className="cursor-pointer">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name={`weekday-${scheduleId}`}
                     className="sr-only"
-                    checked={(editingField.value || []).includes(index)}
+                    checked={isChecked}
                     onChange={(e) => {
-                      const days = editingField.value || []
-                      const newDays = e.target.checked ? [...days, index] : days.filter((d: number) => d !== index)
-                      setEditingField((prev) => (prev ? { ...prev, value: newDays } : null))
+                      setEditingField((prev) => (prev ? { ...prev, value: codeNum } : null))
                     }}
                   />
                   <div
                     className={`
                     px-2 py-1 text-xs rounded border transition-colors
-                    ${
-                      (editingField.value || []).includes(index)
-                        ? "bg-[#8B1538] text-white border-[#8B1538]"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400"
-                    }
+                    ${isChecked ? componentStyles.scheduleManager.dayPillSelected : componentStyles.scheduleManager.dayPillUnselected}
                   `}
                   >
-                    {day}
+                    {d.descripcion}
                   </div>
                 </label>
-              ))}
+              )})}
             </div>
           ) : (
             <Input
@@ -489,14 +513,14 @@ export function ScheduleForm({ onSubmit, doctors, existingSchedules }: ScheduleF
                         <EditableField
                           scheduleId={schedule.id}
                           field="weekDays"
-                          value={schedule.weekDays}
+                          value={Array.isArray(schedule.weekDays) ? schedule.weekDays[0] ?? "" : schedule.weekDays}
                           displayValue={
                             <div className={componentStyles.scheduleManager.weekDaysBadges}>
-                              {[...new Set<string | number>(schedule.weekDays)].map((code) => (
-                                <Badge key={String(code)} variant="secondary" className="text-xs">
-                                  {diasCatalog.find((d) => String(d.codigo) === String(code))?.descripcion || dayNames[Number(code)] || String(code)}
-                                </Badge>
-                              ))}
+                              {(() => {
+                                const code = Array.isArray(schedule.weekDays) ? schedule.weekDays[0] : schedule.weekDays
+                                const label = diasCatalog.find((d) => String(d.codigo) === String(code))?.descripcion || dayNames[Number(code)] || String(code)
+                                return <Badge key={String(code)} variant="secondary" className="text-xs">{label}</Badge>
+                              })()}
                             </div>
                           }
                           type="multiselect"
